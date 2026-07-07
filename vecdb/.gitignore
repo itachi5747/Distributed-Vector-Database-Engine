@@ -1,0 +1,10 @@
+build/
+.cache/
+*.o
+*.a
+*.so
+*.out
+compile_commands.json
+.clangd/
+.vscode/
+*.swp

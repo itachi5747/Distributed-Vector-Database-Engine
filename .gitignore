@@ -1,0 +1,145 @@
+# ============================================================
+# Build artifacts
+# ============================================================
+# CMake / C++ build output
+build/
+out/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# Object / binary outputs
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+*.bin
+*.elf
+*.pdb
+
+# ============================================================
+# IDE / editor
+# ============================================================
+.vscode/
+.idea/
+.vs/
+*.code-workspace
+.clangd/
+.clang-format
+.clang-tidy
+.cache/
+.cquery/
+.ccls-cache/
+
+# Editor swap/temp files
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
+*.orig
+*.rej
+
+# ============================================================
+# OS-generated files
+# ============================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ============================================================
+# Secrets / environment / credentials
+# ============================================================
+.env
+.env.local
+.env.*.local
+*.env
+secrets/
+credentials/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+known_hosts
+
+# ============================================================
+# Logs
+# ============================================================
+*.log
+logs/
+*.pid
+
+# ============================================================
+# Profiling / coverage
+# ============================================================
+*.gcda
+*.gcno
+*.gcov
+coverage/
+*.prof
+prof/
+callgrind.out.*
+cachegrind.out.*
+
+# ============================================================
+# Node / frontend (if any)
+# ============================================================
+node_modules/
+.npm/
+.yarn/
+.pnp.*
+package-lock.json.bak
+
+# ============================================================
+# Python (if any tooling exists)
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+venv/
+.venv/
+env/
+
+# ============================================================
+# Docker
+# ============================================================
+docker-compose.override.yml
+
+# ============================================================
+# Data / runtime artifacts
+# ============================================================
+data/
+runtime/
+*.db
+*.sqlite
+*.sqlite3
