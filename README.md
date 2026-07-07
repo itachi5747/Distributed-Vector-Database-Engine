@@ -8,26 +8,8 @@ This is the same category of system as Pinecone, Weaviate, and Milvus — but ev
 
 ---
 
-## Table of Contents
 
-1. [What Is This Project?](#1-what-is-this-project)
-2. [Why Does This Exist? (Use Cases)](#2-why-does-this-exist-use-cases)
-3. [Why C++?](#3-why-c)
-4. [The Big Picture — How a Request Flows Through the System](#4-the-big-picture--how-a-request-flows-through-the-system)
-5. [Core Concepts You Need to Understand First](#5-core-concepts-you-need-to-understand-first)
-6. [System Architecture](#6-system-architecture)
-7. [Module-by-Module Breakdown](#7-module-by-module-breakdown)
-8. [Step-by-Step Request Walkthroughs](#8-step-by-step-request-walkthroughs)
-9. [Memory Efficiency Strategy](#9-memory-efficiency-strategy)
-10. [Data Models](#10-data-models)
-11. [API Reference](#11-api-reference)
-12. [Frontend Dashboard](#12-frontend-dashboard)
-13. [Project Structure](#13-project-structure)
-14. [Configuration Reference](#14-configuration-reference)
-15. [Tech Stack Summary](#15-tech-stack-summary)
-16. [Build Roadmap](#16-build-roadmap)
 
----
 
 ## 1. What Is This Project?
 
@@ -162,8 +144,8 @@ Raw vector data lives in files that are **memory-mapped** (`mmap`) rather than r
 ## 6. System Architecture
 
 ```
-![Full Architecture Diagram](./vecdb_full_architecture.svg)
-
+![Full Architecture Diagram](vecdb_full_architecture.svg)
+```
 ### Deployment topology, in plain words
 
 Each shard runs in its own Docker container, and the Coordinator runs as a separate container from the shards. In a real production deployment, shards typically live on separate physical machines so their memory pools stay isolated from each other. A minimum working deployment is **1 coordinator + 3 shards**. Shards scale out horizontally, and the coordinator handles rebalancing the hash ring when that happens.
