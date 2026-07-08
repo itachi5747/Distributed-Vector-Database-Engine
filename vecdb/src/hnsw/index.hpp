@@ -13,117 +13,93 @@
 
 namespace vecdb {
 
-// ──────────────────────────────────────────────
+// Forward declaration for snapshot support
+class MmapStore;
+
+// ──────────────────────────────────────────────────────────────────
 //  Configuration for the HNSW index
-// ──────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────
 struct HNSWConfig {
-    int    dim             = 128;   // vector dimensionality
-    int    M               = 16;    // max neighbours per node per layer
-    int    M_max0          = 32;    // max neighbours at layer 0 (usually 2*M)
-    int    ef_construction = 200;   // beam width during build
-    int    ef_search       = 50;    // beam width during query
-    int    max_layers      = 6;     // hard cap on layer height
-    size_t arena_bytes     = 64ULL * 1024 * 1024; // 64 MB arena for neighbour store
+    int    dim             = 128;
+    int    M               = 16;
+    int    M_max0          = 32;
+    int    ef_construction = 200;
+    int    ef_search       = 50;
+    int    max_layers      = 6;
+    size_t arena_bytes     = 64ULL * 1024 * 1024;
 };
 
-// ──────────────────────────────────────────────
-//  One search result: (distance², node_id)
-// ──────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────
+//  One search result
+// ──────────────────────────────────────────────────────────────────
 struct SearchResult {
-    float    dist;    // squared L2 distance (or cosine distance)
+    float    dist;
     uint32_t node_id;
-
-    // min-heap ordering (smallest dist first)
     bool operator>(const SearchResult& o) const { return dist > o.dist; }
     bool operator<(const SearchResult& o) const { return dist < o.dist; }
 };
 
-// ──────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────
 //  HNSWIndex
-//
-//  Single-shard, single-process HNSW index.
-//  Thread-safe: concurrent searches, exclusive inserts.
-// ──────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────
 class HNSWIndex {
 public:
     explicit HNSWIndex(const HNSWConfig& cfg);
     ~HNSWIndex() = default;
 
-    // ── Mutating operations ──────────────────
-    // Insert a vector; returns its internal node_id.
-    // `vec` must point to cfg.dim floats.
+    // ── Mutating ──────────────────────────────────────────────────
     uint32_t insert(const float* vec);
 
-    // ── Query operations ─────────────────────
-    // Return top-K nearest neighbours of `query`.
-    // `query` must point to cfg.dim floats.
+    // ── Query ─────────────────────────────────────────────────────
     std::vector<SearchResult> search(const float* query, int top_k) const;
     std::vector<SearchResult> search(const float* query, int top_k, int ef) const;
 
-    // ── Introspection ────────────────────────
+    // ── Introspection ─────────────────────────────────────────────
     uint32_t size() const { return next_id_.load(std::memory_order_relaxed); }
     int      dim()  const { return cfg_.dim; }
     const HNSWConfig& config() const { return cfg_; }
 
-    // Raw vector access (read-only, no bounds check)
     const float* get_vector(uint32_t node_id) const {
         return vectors_.data() + static_cast<size_t>(node_id) * cfg_.dim;
     }
 
+    // ── Phase 4: snapshot support ──────────────────────────────────
+
+    // Called by snapshot::save() — read-only accessors for the graph
+    int      max_layer_stored()    const { return max_layer_.load(std::memory_order_relaxed); }
+    uint32_t entry_point_stored()  const { return entry_point_.load(std::memory_order_relaxed); }
+    int      layer_count_for(uint32_t node_id) const { return neighbours_.layer_count(node_id); }
+    const std::pmr::vector<uint32_t>& neighbours_at(uint32_t node_id, int layer) const {
+        return neighbours_.get_neighbours(node_id, layer);
+    }
+
+    // Called by snapshot::load() — restore full state from deserialized data
+    void load_from_snapshot(
+        const MmapStore& seg,
+        const std::vector<std::vector<std::vector<uint32_t>>>& adj,
+        uint32_t entry_point,
+        int      max_layer);
+
 private:
-    // ── Internal types ───────────────────────
-    using Candidates = std::vector<SearchResult>; // max-heap by dist
+    using Candidates = std::vector<SearchResult>;
 
-    // ── Core HNSW algorithms ─────────────────
-
-    // Sample the layer height for a new node (Algorithm 1, step 1)
-    int  sample_layer() const;
-
-    // Greedy search from ep down to target_layer, ef=1 (coarse descent)
-    // Returns the single closest node found at target_layer.
-    uint32_t greedy_search_layer(uint32_t ep,
-                                  const float* query,
-                                  int target_layer) const;
-
-    // Beam search at a single layer.
-    // Returns up to ef candidates sorted by distance (closest first).
-    Candidates search_layer(uint32_t ep,
-                             const float* query,
-                             int ef,
-                             int layer) const;
-
-    // Select best M neighbours from candidates (simple heuristic: take M closest)
-    std::vector<uint32_t> select_neighbours(const Candidates& candidates,
-                                             int M) const;
-
-    // Prune neighbour list to at most M_max entries
+    int      sample_layer() const;
+    uint32_t greedy_search_layer(uint32_t ep, const float* query, int layer) const;
+    Candidates search_layer(uint32_t ep, const float* query, int ef, int layer) const;
+    std::vector<uint32_t> select_neighbours(const Candidates& c, int M) const;
     void prune_connections(uint32_t node_id, int layer, int M_max);
-
-    // ── Distance kernel ──────────────────────
     float l2_sq(const float* a, const float* b) const;
 
-    // ── Data members ─────────────────────────
     HNSWConfig cfg_;
-
-    // Flat vector storage: vector i lives at vectors_[i * dim]
-    // Aligned to 64 bytes for cache-line efficiency
     alignas(64) std::vector<float> vectors_;
-
-    // Adjacency lists (arena-allocated)
     NeighbourStore neighbours_;
 
-    // Global entry point and current max layer
     std::atomic<uint32_t> entry_point_{0};
-    std::atomic<int>      max_layer_{-1};  // -1 = index empty
-
-    // Next available node id
+    std::atomic<int>      max_layer_{-1};
     std::atomic<uint32_t> next_id_{0};
 
-    // RNG for layer sampling (mutable so search can be const; protected by write lock)
     mutable std::mt19937 rng_;
     mutable std::uniform_real_distribution<double> uniform_{0.0, 1.0};
-
-    // Read-write lock: shared for search, exclusive for insert
     mutable std::shared_mutex rwlock_;
 };
 

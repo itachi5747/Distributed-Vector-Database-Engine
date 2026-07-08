@@ -1,4 +1,5 @@
 #include "index.hpp"
+#include "src/storage/mmap_store.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -314,3 +315,48 @@ HNSWIndex::search(const float* query, int top_k, int ef) const {
 }
 
 } // namespace vecdb
+
+
+namespace vecdb {
+
+// ────────────────────────────────────────────────────────────────────────────
+//  load_from_snapshot  (Phase 4)
+//
+//  Restores the complete index state from a MmapStore (vectors) and a
+//  deserialized adjacency list (graph). Called by snapshot::load().
+//
+//  Must be called on a freshly constructed, empty index.
+// ────────────────────────────────────────────────────────────────────────────
+void HNSWIndex::load_from_snapshot(
+    const MmapStore& seg,
+    const std::vector<std::vector<std::vector<uint32_t>>>& adj,
+    uint32_t entry_point,
+    int      max_layer)
+{
+    std::unique_lock<std::shared_mutex> lock(rwlock_);
+
+    const uint32_t N = seg.vec_count();
+
+    // ── 1. Copy vectors from segment into our float array ─────────────────────
+    vectors_.resize(static_cast<size_t>(N) * cfg_.dim);
+    for (uint32_t i = 0; i < N; ++i) {
+        const float* src = seg.get(i);
+        float* dst = vectors_.data() + static_cast<size_t>(i) * cfg_.dim;
+        std::copy(src, src + cfg_.dim, dst);
+    }
+
+    // ── 2. Restore adjacency lists ────────────────────────────────────────────
+    neighbours_.resize(N, cfg_.max_layers);
+    for (uint32_t node = 0; node < N && node < adj.size(); ++node) {
+        for (int l = 0; l < static_cast<int>(adj[node].size()); ++l) {
+            neighbours_.set_neighbours(node, l, adj[node][l]);
+        }
+    }
+
+    // ── 3. Restore metadata ───────────────────────────────────────────────────
+    next_id_.store(N, std::memory_order_relaxed);
+    entry_point_.store(entry_point, std::memory_order_relaxed);
+    max_layer_.store(max_layer, std::memory_order_relaxed);
+}
+
+} // namespace vecdb (load_from_snapshot)
