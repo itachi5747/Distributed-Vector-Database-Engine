@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package vecdb;
+
+option cc_generic_services = false;
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  vecdb gRPC Service — Phase 6
+//
+//  All vectors are transmitted as raw IEEE-754 float32 bytes, little-endian.
+//  Encoding: `bytes vector = N` — client packs dim floats, server unpacks them.
+//
+//  Authentication: every RPC requires a bearer token in the gRPC metadata:
+//    key:   "authorization"
+//    value: "Bearer <token>"
+// ──────────────────────────────────────────────────────────────────────────────
+
+service VectorDB {
+  // Insert a single vector
+  rpc Insert (InsertRequest)  returns (InsertResponse);
+
+  // Bulk insert (client streaming)
+  rpc BulkInsert (stream InsertRequest) returns (BulkInsertResponse);
+
+  // Search for nearest neighbours
+  rpc Search (SearchRequest) returns (SearchResponse);
+
+  // Delete a vector by id
+  rpc Delete (DeleteRequest) returns (DeleteResponse);
+
+  // Get collection / shard info
+  rpc GetInfo (InfoRequest) returns (InfoResponse);
+}
+
+// ── Insert ────────────────────────────────────────────────────────────────────
+
+message InsertRequest {
+  uint64 vector_id = 1;        // stable client-provided ID
+  bytes  vector    = 2;        // raw float32 LE bytes (dim * 4 bytes)
+  bytes  metadata  = 3;        // arbitrary JSON payload (optional)
+}
+
+message InsertResponse {
+  uint32 shard_id  = 1;        // which shard owns this vector
+  uint32 node_id   = 2;        // shard-local node id
+  int64  latency_us = 3;
+}
+
+// ── Bulk insert ───────────────────────────────────────────────────────────────
+
+message BulkInsertResponse {
+  uint64 inserted   = 1;
+  uint64 failed     = 2;
+  int64  latency_us = 3;
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+
+message SearchRequest {
+  bytes  query     = 1;        // raw float32 LE bytes
+  int32  top_k     = 2;        // number of results to return
+  int32  ef_search = 3;        // 0 = use server default
+}
+
+message SearchResult {
+  uint32 shard_id  = 1;
+  uint32 node_id   = 2;
+  float  distance  = 3;        // true L2 distance (not squared)
+  bytes  metadata  = 4;
+}
+
+message SearchResponse {
+  repeated SearchResult results = 1;
+  int64  latency_us  = 2;
+  bool   degraded    = 3;      // true if >= 1 shard was unavailable
+  uint32 shards_ok   = 4;
+  uint32 shards_err  = 5;
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+
+message DeleteRequest {
+  uint64 vector_id = 1;
+}
+
+message DeleteResponse {
+  bool  found      = 1;
+  int64 latency_us = 2;
+}
+
+// ── Info ──────────────────────────────────────────────────────────────────────
+
+message InfoRequest {}
+
+message ShardInfo {
+  uint32 shard_id      = 1;
+  uint64 vector_count  = 2;
+  string status        = 3;    // "healthy" | "degraded" | "offline"
+}
+
+message InfoResponse {
+  uint64             total_vectors = 1;
+  uint32             shard_count   = 2;
+  int32              dim           = 3;
+  repeated ShardInfo shards        = 4;
+}

@@ -62,14 +62,14 @@ ShardManager::search(const float* query, int top_k, int ef) const {
     const int ef_actual = (ef > 0) ? ef : cfg_.ef_search;
 
     // Scatter: one async task per shard
-    std::vector<std::future<std::vector<SearchResult>>> futures;
+    std::vector<std::future<std::vector<HNSWSearchResult>>> futures;
     futures.reserve(shard_count_);
 
     for (uint32_t s = 0; s < shard_count_; ++s) {
         const ShardState* ss = shards_[s].get();
         futures.push_back(
             std::async(std::launch::async,
-                [ss, query, top_k, ef_actual]() -> std::vector<SearchResult> {
+                [ss, query, top_k, ef_actual]() -> std::vector<HNSWSearchResult> {
                     if (!ss->healthy.load(std::memory_order_relaxed)) return {};
                     return ss->index->search(query, top_k, ef_actual);
                 })
@@ -77,7 +77,7 @@ ShardManager::search(const float* query, int top_k, int ef) const {
     }
 
     // Gather
-    std::vector<std::vector<SearchResult>> partials;
+    std::vector<std::vector<HNSWSearchResult>> partials;
     partials.reserve(shard_count_);
 
     ShardSearchResult result;
@@ -99,14 +99,14 @@ ShardManager::search(const float* query, int top_k, int ef) const {
 
 // ── merge_results ─────────────────────────────────────────────────────────────
 
-std::vector<SearchResult>
-ShardManager::merge_results(std::vector<std::vector<SearchResult>>& partials,
+std::vector<HNSWSearchResult>
+ShardManager::merge_results(std::vector<std::vector<HNSWSearchResult>>& partials,
                               int top_k) {
     size_t total = 0;
     for (auto& p : partials) total += p.size();
     if (total == 0) return {};
 
-    std::vector<SearchResult> all;
+    std::vector<HNSWSearchResult> all;
     all.reserve(total);
     for (auto& p : partials)
         for (auto& r : p)

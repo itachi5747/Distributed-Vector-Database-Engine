@@ -32,11 +32,11 @@ struct HNSWConfig {
 // ──────────────────────────────────────────────────────────────────
 //  One search result
 // ──────────────────────────────────────────────────────────────────
-struct SearchResult {
+struct HNSWSearchResult {
     float    dist;
     uint32_t node_id;
-    bool operator>(const SearchResult& o) const { return dist > o.dist; }
-    bool operator<(const SearchResult& o) const { return dist < o.dist; }
+    bool operator>(const HNSWSearchResult& o) const { return dist > o.dist; }
+    bool operator<(const HNSWSearchResult& o) const { return dist < o.dist; }
 };
 
 // ──────────────────────────────────────────────────────────────────
@@ -51,8 +51,8 @@ public:
     uint32_t insert(const float* vec);
 
     // ── Query ─────────────────────────────────────────────────────
-    std::vector<SearchResult> search(const float* query, int top_k) const;
-    std::vector<SearchResult> search(const float* query, int top_k, int ef) const;
+    std::vector<HNSWSearchResult> search(const float* query, int top_k) const;
+    std::vector<HNSWSearchResult> search(const float* query, int top_k, int ef) const;
 
     // ── Introspection ─────────────────────────────────────────────
     uint32_t size() const { return next_id_.load(std::memory_order_relaxed); }
@@ -81,7 +81,7 @@ public:
         int      max_layer);
 
 private:
-    using Candidates = std::vector<SearchResult>;
+    using Candidates = std::vector<HNSWSearchResult>;
 
     int      sample_layer() const;
     uint32_t greedy_search_layer(uint32_t ep, const float* query, int layer) const;

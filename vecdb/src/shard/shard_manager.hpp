@@ -14,7 +14,7 @@
 namespace vecdb {
 
 struct ShardSearchResult {
-    std::vector<SearchResult> results;
+    std::vector<HNSWSearchResult> results;
     bool     degraded   = false;
     uint32_t shards_ok  = 0;
     uint32_t shards_err = 0;
@@ -66,6 +66,10 @@ public:
     uint32_t owning_shard(uint64_t vector_id) const { return ring_.get_shard(vector_id); }
     std::vector<uint32_t> load_distribution() const;
 
+    // Phase 6 accessors
+    int  cfg_dim()                 const { return cfg_.dim; }
+    bool shard_healthy(uint32_t s)  const { return s < shard_count_ && shards_[s]->healthy.load(); }
+
     // Exposed for testing degraded-flag behaviour
     std::vector<std::unique_ptr<ShardState>> shards_;
 
@@ -75,8 +79,8 @@ private:
     std::string        data_dir_;
     ConsistentHashRing ring_;
 
-    static std::vector<SearchResult>
-    merge_results(std::vector<std::vector<SearchResult>>& partials, int top_k);
+    static std::vector<HNSWSearchResult>
+    merge_results(std::vector<std::vector<HNSWSearchResult>>& partials, int top_k);
 };
 
 } // namespace vecdb

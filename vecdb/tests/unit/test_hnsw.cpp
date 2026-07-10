@@ -62,7 +62,7 @@ brute_force_topk(const std::vector<std::vector<float>>& dataset,
 
 // Compute recall@K: fraction of true top-K found in HNSW top-K results
 static float recall_at_k(const std::vector<uint32_t>& truth,
-                          const std::vector<vecdb::SearchResult>& found) {
+                          const std::vector<vecdb::HNSWSearchResult>& found) {
     if (truth.empty()) return 1.0f;
     int hits = 0;
     for (auto& r : found) {

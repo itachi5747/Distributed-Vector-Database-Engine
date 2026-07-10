@@ -108,12 +108,12 @@ HNSWIndex::search_layer(uint32_t ep,
     std::vector<bool> visited(n, false);
 
     // candidates: min-heap — we expand the closest unexplored node first
-    // Using SearchResult with operator> for min-heap behaviour in priority_queue
-    using MinHeap = std::priority_queue<SearchResult,
-                                        std::vector<SearchResult>,
-                                        std::greater<SearchResult>>;
+    // Using HNSWSearchResult with operator> for min-heap behaviour in priority_queue
+    using MinHeap = std::priority_queue<HNSWSearchResult,
+                                        std::vector<HNSWSearchResult>,
+                                        std::greater<HNSWSearchResult>>;
     // results: max-heap — we keep the ef closest results found so far
-    using MaxHeap = std::priority_queue<SearchResult>;
+    using MaxHeap = std::priority_queue<HNSWSearchResult>;
 
     float ep_dist = l2_sq(get_vector(ep), query);
     visited[ep] = true;
@@ -124,7 +124,7 @@ HNSWIndex::search_layer(uint32_t ep,
     results.push({ep_dist, ep});
 
     while (!candidates.empty()) {
-        SearchResult c = candidates.top();
+        HNSWSearchResult c = candidates.top();
         candidates.pop();
 
         // Early termination: if the closest candidate is further than the
@@ -281,12 +281,12 @@ uint32_t HNSWIndex::insert(const float* vec) {
 // ────────────────────────────────────────────────────────────────────────────
 //  search  (HNSW paper Algorithm 5)
 // ────────────────────────────────────────────────────────────────────────────
-std::vector<SearchResult>
+std::vector<HNSWSearchResult>
 HNSWIndex::search(const float* query, int top_k) const {
     return search(query, top_k, cfg_.ef_search);
 }
 
-std::vector<SearchResult>
+std::vector<HNSWSearchResult>
 HNSWIndex::search(const float* query, int top_k, int ef) const {
     // ── Shared lock — concurrent searches run truly in parallel ──────────
     std::shared_lock<std::shared_mutex> lock(rwlock_);
