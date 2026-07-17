@@ -38,6 +38,7 @@ public:
 
     // For testing: bypass auth entirely
     void set_disabled(bool disabled) { disabled_ = disabled; }
+    bool is_disabled() const { return disabled_; }
 
 private:
     std::unordered_set<std::string> tokens_;

@@ -1,63 +1,66 @@
 // vecdb — Distributed Vector Database Engine
-// Phase 6 — gRPC API Server Entry Point
-//
+// Phase 6 — gRPC + HTTP API Server Entry Point
+
 // Usage:
-//   ./vecdb_server [--addr 0.0.0.0:50051] [--shards 3] [--dim 768]
+//   ./vecdb_server [--addr 0.0.0.0:50051] [--http-addr 0.0.0.0:8080]
+//                 [--shards 3] [--dim 768]
 //                 [--data-dir /data] [--token <bearer-token>]
+//                 [--no-auth] [--rate 100] [--load]
 
 #include <iostream>
 #include <string>
+#include <unordered_set>
 #include <vector>
-#include <csignal>
 
 #include "src/hnsw/index.hpp"
 #include "src/shard/shard_manager.hpp"
 #include "src/server/auth_middleware.hpp"
 #include "src/server/rate_limiter.hpp"
 #include "src/server/grpc_server.hpp"
+#include "src/server/http_api.hpp"
 #include "src/simd/distance.hpp"
 
 static void print_usage(const char* prog) {
     std::cout << "Usage: " << prog << " [options]\n"
-              << "  --addr     <host:port>  Listen address (default: 0.0.0.0:50051)\n"
-              << "  --shards   <N>          Number of shards (default: 3)\n"
-              << "  --dim      <D>          Vector dimension (default: 768)\n"
-              << "  --data-dir <path>       Data directory (default: ./data)\n"
-              << "  --token    <token>      Bearer token for auth (repeatable)\n"
-              << "  --no-auth              Disable authentication\n"
-              << "  --rate     <N>          Requests/sec per client (default: 100)\n"
-              << "  --load                 Load snapshots from data-dir on startup\n";
+              << "  --addr       <host:port>  gRPC listen address (default: 0.0.0.0:50051)\n"
+              << "  --http-addr  <host:port>  HTTP listen address (default: 0.0.0.0:8080)\n"
+              << "  --shards     <N>          Number of shards (default: 3)\n"
+              << "  --dim        <D>          Vector dimension (default: 768)\n"
+              << "  --data-dir   <path>       Data directory (default: ./data)\n"
+              << "  --token      <token>      Bearer token for auth (repeatable)\n"
+              << "  --no-auth                 Disable authentication\n"
+              << "  --rate       <N>          Requests/sec per client (default: 100)\n"
+              << "  --load                    Load snapshots from data-dir on startup\n";
 }
 
 int main(int argc, char* argv[]) {
-    // ── Parse arguments ────────────────────────────────────────────────────────
-    std::string addr     = "0.0.0.0:50051";
-    int         shards   = 3;
-    int         dim      = 768;
-    std::string data_dir = "./data";
-    double      rate     = 100.0;
-    bool        no_auth  = false;
-    bool        load     = false;
+    std::string grpc_addr = "0.0.0.0:50051";
+    std::string http_addr = "0.0.0.0:8080";
+    int         shards    = 3;
+    int         dim       = 768;
+    std::string data_dir  = "./data";
+    double      rate      = 100.0;
+    bool        no_auth   = false;
+    bool        load      = false;
     std::vector<std::string> tokens;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if      (arg == "--addr"     && i+1 < argc) addr     = argv[++i];
-        else if (arg == "--shards"   && i+1 < argc) shards   = std::stoi(argv[++i]);
-        else if (arg == "--dim"      && i+1 < argc) dim      = std::stoi(argv[++i]);
-        else if (arg == "--data-dir" && i+1 < argc) data_dir = argv[++i];
-        else if (arg == "--token"    && i+1 < argc) tokens.push_back(argv[++i]);
-        else if (arg == "--rate"     && i+1 < argc) rate     = std::stod(argv[++i]);
-        else if (arg == "--no-auth")                no_auth  = true;
-        else if (arg == "--load")                   load     = true;
-        else if (arg == "--help" || arg == "-h")  { print_usage(argv[0]); return 0; }
+        if      (arg == "--addr"      && i + 1 < argc) grpc_addr = argv[++i];
+        else if (arg == "--http-addr" && i + 1 < argc) http_addr = argv[++i];
+        else if (arg == "--shards"    && i + 1 < argc) shards    = std::stoi(argv[++i]);
+        else if (arg == "--dim"       && i + 1 < argc) dim       = std::stoi(argv[++i]);
+        else if (arg == "--data-dir"  && i + 1 < argc) data_dir  = argv[++i];
+        else if (arg == "--token"     && i + 1 < argc) tokens.push_back(argv[++i]);
+        else if (arg == "--rate"      && i + 1 < argc) rate      = std::stod(argv[++i]);
+        else if (arg == "--no-auth")                   no_auth   = true;
+        else if (arg == "--load")                      load      = true;
+        else if (arg == "--help" || arg == "-h")      { print_usage(argv[0]); return 0; }
     }
 
-    // ── SIMD dispatch ──────────────────────────────────────────────────────────
     vecdb::simd::init();
     std::cout << "[vecdb] SIMD: " << vecdb::simd::active_isa_name() << "\n";
 
-    // ── Build index ────────────────────────────────────────────────────────────
     vecdb::HNSWConfig cfg;
     cfg.dim             = dim;
     cfg.M               = 16;
@@ -75,7 +78,6 @@ int main(int argc, char* argv[]) {
         std::cout << "[vecdb] Loaded " << mgr.total_vectors() << " vectors\n";
     }
 
-    // ── Auth ───────────────────────────────────────────────────────────────────
     std::unordered_set<std::string> token_set(tokens.begin(), tokens.end());
     vecdb::AuthMiddleware auth(token_set);
     if (no_auth || tokens.empty()) {
@@ -85,17 +87,26 @@ int main(int argc, char* argv[]) {
         std::cout << "[vecdb] Auth: enabled (" << tokens.size() << " token(s))\n";
     }
 
-    // ── Rate limiter ───────────────────────────────────────────────────────────
-    vecdb::RateLimiter rl(rate * 2.0, rate); // burst = 2x steady rate
+    vecdb::RateLimiter rl(rate * 2.0, rate);
     std::cout << "[vecdb] Rate limit: " << rate << " req/s per client\n";
 
-    // ── Start server ───────────────────────────────────────────────────────────
-    vecdb::ServerConfig srv_cfg;
-    srv_cfg.listen_addr = addr;
+    vecdb::ServerConfig grpc_cfg;
+    grpc_cfg.listen_addr = grpc_addr;
 
-    std::cout << "[vecdb] Listening on " << addr << "\n";
+    vecdb::HttpApiConfig http_cfg;
+    http_cfg.listen_addr = http_addr;
+    http_cfg.cors_origin = "*";
+
+    std::cout << "[vecdb] gRPC listening on " << grpc_addr << "\n";
+    std::cout << "[vecdb] HTTP  listening on " << http_addr << "\n";
     std::cout << "[vecdb] Ready — press Ctrl+C to stop\n";
 
-    run_server(mgr, auth, rl, srv_cfg);
+    vecdb::HttpApiServer http_server(mgr, auth, rl, http_cfg);
+    http_server.start();
+
+    run_server(mgr, auth, rl, grpc_cfg);
+
+    http_server.stop();
+    http_server.wait();
     return 0;
 }
